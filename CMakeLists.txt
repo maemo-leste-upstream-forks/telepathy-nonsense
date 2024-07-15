@@ -1,13 +1,14 @@
-project(telepathy-nonsense)
-
 cmake_minimum_required(VERSION 3.3)
+cmake_policy(SET CMP0100 NEW)
+
+project(telepathy-nonsense)
 
 set (telepathy_nonsense_VERSION_MAJOR 0)
 set (telepathy_nonsense_VERSION_MINOR 1)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/modules")
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
