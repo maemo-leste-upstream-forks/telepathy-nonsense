@@ -1,0 +1,15 @@
+Source: telepathy-nonsense
+Section: net
+Priority: optional
+Maintainer: Ben de Graaff <ben@nx3d.org>
+Build-Depends: debhelper-compat (= 13),
+    cmake,
+    libtelepathy-qt5-dev,
+    libqxmpp-dev
+Standards-Version: 4.5.1
+Rules-Requires-Root: no
+
+Package: telepathy-nonsense
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Telepathy connection manager for the XMPP (Jabber) protocol.
