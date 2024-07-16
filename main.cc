@@ -35,7 +35,7 @@ int main(int argc, char *argv[])
     Tp::enableWarnings(true);
     DebugInterface debug;
 
-    Tp::BaseProtocolPtr proto = Tp::BaseProtocol::create<Protocol>(QStringLiteral("xmpp"));
+    Tp::BaseProtocolPtr proto = Tp::BaseProtocol::create<Protocol>(QStringLiteral("jabber"));
     Tp::BaseConnectionManagerPtr cm = Tp::BaseConnectionManager::create(QStringLiteral("nonsense"));
 
     cm->addProtocol(proto);
