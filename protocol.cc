@@ -38,7 +38,7 @@ Protocol::Protocol(const QDBusConnection &dbusConnection, const QString &name)
     setRequestableChannelClasses(Tp::RequestableChannelClassSpecList() << Tp::RequestableChannelClassSpec::textChat());
     setEnglishName(QStringLiteral("XMPP"));
     setIconName(QStringLiteral("im-jabber"));
-    setVCardField(QStringLiteral("x-jabber"));
+    setVCardField(QStringLiteral("jabber"));
 
     setCreateConnectionCallback(Tp::memFun(this, &Protocol::createConnection));
     setIdentifyAccountCallback(Tp::memFun(this, &Protocol::identifyAccount));
@@ -56,7 +56,7 @@ Protocol::Protocol(const QDBusConnection &dbusConnection, const QString &name)
                   );
 
     m_addrIface = Tp::BaseProtocolAddressingInterface::create();
-    m_addrIface->setAddressableVCardFields(QStringList() << QStringLiteral("x-jabber"));
+    m_addrIface->setAddressableVCardFields(QStringList() << QStringLiteral("jabber"));
     m_addrIface->setAddressableUriSchemes(QStringList() << QStringLiteral("xmpp"));
     m_addrIface->setNormalizeVCardAddressCallback(Tp::memFun(this, &Protocol::normalizeVCardAddress));
     m_addrIface->setNormalizeContactUriCallback(Tp::memFun(this, &Protocol::normalizeContactUri));

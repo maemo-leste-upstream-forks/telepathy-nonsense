@@ -17,7 +17,8 @@ add_definitions(-DQT_NO_CAST_FROM_ASCII)
 
 find_package(TelepathyQt5 0.9.6 REQUIRED)
 find_package(TelepathyQt5Service 0.9.6 REQUIRED)
-find_package(QXmpp 1.0.0 REQUIRED CONFIG)
+find_package(QXmppQt5 1.6.0 REQUIRED CONFIG)
+
 find_package(Qt5 REQUIRED COMPONENTS Core DBus Xml Network)
 
 include(GNUInstallDirs)

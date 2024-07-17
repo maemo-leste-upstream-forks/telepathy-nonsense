@@ -157,6 +157,7 @@ Connection::Connection(const QDBusConnection &dbusConnection, const QString &cmN
     plugInterface(Tp::AbstractConnectionInterfacePtr::dynamicCast(m_requestsIface));
 
     QString myJid = parameters.value(QStringLiteral("account")).toString();
+    QString password = parameters.value(QStringLiteral("password")).toString();
     QString server = parameters.value(QStringLiteral("server")).toString();
     QString resource = parameters.value(QStringLiteral("resource")).toString();
     if (resource.isEmpty()) {
@@ -167,6 +168,9 @@ Connection::Connection(const QDBusConnection &dbusConnection, const QString &cmN
     bool requireEncryption = parameters.value(QStringLiteral("require-encryption")).toBool();
     bool ignoreSslErrors = parameters.value(QStringLiteral("ignore-ssl-errors")).toBool();
     m_clientConfig.setJid(myJid);
+    if (!password.isEmpty()) {
+        m_clientConfig.setPassword(password);
+    }
     if (!server.isEmpty()) {
         m_clientConfig.setHost(server);
     }
@@ -260,28 +264,32 @@ void Connection::doConnect(Tp::DBusError *error)
     connect(&m_client->vCardManager(), &QXmppVCardManager::vCardReceived, this, &Connection::onVCardReceived);
     connect(&m_client->vCardManager(), &QXmppVCardManager::clientVCardReceived, this, &Connection::onClientVCardReceived);
 
-    //SASL channel registration
-    Tp::DBusError saslError;
-    Tp::BaseChannelPtr baseChannel = Tp::BaseChannel::create(this, TP_QT_IFACE_CHANNEL_TYPE_SERVER_AUTHENTICATION);
-    Tp::BaseChannelServerAuthenticationTypePtr authType = Tp::BaseChannelServerAuthenticationType::create(TP_QT_IFACE_CHANNEL_INTERFACE_SASL_AUTHENTICATION);
-    baseChannel->plugInterface(Tp::AbstractChannelInterfacePtr::dynamicCast(authType));
+    if (!m_clientConfig.password().isEmpty()) {
+        m_client->connectToServer(m_clientConfig, m_clientPresence);
+    } else {
+        //SASL channel registration
+        Tp::DBusError saslError;
+        Tp::BaseChannelPtr baseChannel = Tp::BaseChannel::create(this, TP_QT_IFACE_CHANNEL_TYPE_SERVER_AUTHENTICATION);
+        Tp::BaseChannelServerAuthenticationTypePtr authType = Tp::BaseChannelServerAuthenticationType::create(TP_QT_IFACE_CHANNEL_INTERFACE_SASL_AUTHENTICATION);
+        baseChannel->plugInterface(Tp::AbstractChannelInterfacePtr::dynamicCast(authType));
 
-    m_saslIface = Tp::BaseChannelSASLAuthenticationInterface::create(QStringList() << QStringLiteral("X-TELEPATHY-PASSWORD"),
-                                                                     /* hasInitialData */ false,
-                                                                     /* canTryAgain */ true,
-                                                                     /* authorizationIdentity */ m_client->configuration().jid(),
-                                                                     /* defaultUsername */ QString(),
-                                                                     /* defaultRealm */ m_client->configuration().domain(),
-                                                                     /* maySaveResponse */ true);
+        m_saslIface = Tp::BaseChannelSASLAuthenticationInterface::create(QStringList() << QStringLiteral("X-TELEPATHY-PASSWORD"),
+                /* hasInitialData */ false,
+                /* canTryAgain */ true,
+                /* authorizationIdentity */ m_client->configuration().jid(),
+                /* defaultUsername */ QString(),
+                /* defaultRealm */ m_client->configuration().domain(),
+                /* maySaveResponse */ true);
 
-    m_saslIface->setStartMechanismWithDataCallback(Tp::memFun(this, &Connection::saslStartMechanismWithData));
+        m_saslIface->setStartMechanismWithDataCallback(Tp::memFun(this, &Connection::saslStartMechanismWithData));
 
-    baseChannel->setRequested(false);
-    baseChannel->plugInterface(Tp::AbstractChannelInterfacePtr::dynamicCast(m_saslIface));
+        baseChannel->setRequested(false);
+        baseChannel->plugInterface(Tp::AbstractChannelInterfacePtr::dynamicCast(m_saslIface));
 
-    baseChannel->registerObject(&saslError);
-    if (!saslError.isValid()) {
-        addChannel(baseChannel);
+        baseChannel->registerObject(&saslError);
+        if (!saslError.isValid()) {
+            addChannel(baseChannel);
+        }
     }
 }
 
@@ -311,7 +319,9 @@ void Connection::onConnected()
     DBG;
 
     setStatus(Tp::ConnectionStatusConnected, Tp::ConnectionStatusReasonRequested);
-    m_saslIface->setSaslStatus(Tp::SASLStatusSucceeded, QLatin1String("Succeeded"), QVariantMap());
+    if (m_saslIface) {
+        m_saslIface->setSaslStatus(Tp::SASLStatusSucceeded, QLatin1String("Succeeded"), QVariantMap());
+    }
 
     Tp::SimpleContactPresences presences;
     QMap<QString, QXmppPresence> clientPresence;
@@ -341,7 +351,11 @@ void Connection::onError(QXmppClient::Error error)
     } else if (error == QXmppClient::XmppStreamError) {
         QXmppStanza::Error::Condition xmppStreamError = m_client->xmppStreamError();
         if (xmppStreamError == QXmppStanza::Error::NotAuthorized) {
-            m_saslIface->setSaslStatus(Tp::SASLStatusServerFailed, QStringLiteral("ServerFailed"), QVariantMap());
+            if (m_saslIface) {
+                m_saslIface->setSaslStatus(Tp::SASLStatusServerFailed, QStringLiteral("ServerFailed"), QVariantMap());
+            } else {
+                setStatus(Tp::ConnectionStatusDisconnected, Tp::ConnectionStatusReasonAuthenticationFailed);
+            }
         } else {
             setStatus(Tp::ConnectionStatusDisconnected, Tp::ConnectionStatusReasonNoneSpecified);
         }
@@ -685,7 +699,9 @@ QString Connection::getAlias(uint handle, Tp::DBusError *error)
     if (m_mucParticipants.contains(jid)) {
         return QXmppUtils::jidToResource(jid);
     } else {
-        return m_client->rosterManager().getRosterEntry(jid).name();
+        const auto entry = m_client->rosterManager().getRosterEntry(jid);
+        const QString name = entry.name();
+        return name.isEmpty() ? entry.bareJid() : name;
     }
 }
 
