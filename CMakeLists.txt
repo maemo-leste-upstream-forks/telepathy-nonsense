@@ -17,7 +17,10 @@ add_definitions(-DQT_NO_CAST_FROM_ASCII)
 
 find_package(TelepathyQt5 0.9.6 REQUIRED)
 find_package(TelepathyQt5Service 0.9.6 REQUIRED)
-find_package(QXmppQt5 1.6.0 REQUIRED CONFIG)
+set(CMAKE_FIND_DEBUG_MODE TRUE)
+find_package(QXmppQt5 1.7 REQUIRED CONFIG)
+find_package(QXmppOmemoQt5 1.7 REQUIRED CONFIG)
+set(CMAKE_FIND_DEBUG_MODE FALSE)
 
 find_package(Qt5 REQUIRED COMPONENTS Core DBus Xml Network)
 
@@ -36,6 +39,7 @@ set(nonsense_SOURCES
     textchannel.cc
     muctextchannel.cc
     uniquehandlemap.cc
+    omemostore.cc
 )
 
 add_executable(telepathy-nonsense ${nonsense_SOURCES})
@@ -50,6 +54,7 @@ target_link_libraries(telepathy-nonsense
     Qt5::DBus
     Qt5::Network
     QXmpp::QXmpp
+    QXmpp::Omemo
     ${TELEPATHY_QT5_LIBRARIES}
     ${TELEPATHY_QT5_SERVICE_LIBRARIES}
 )

@@ -29,11 +29,18 @@
 #include <QXmppDiscoveryManager.h>
 #include <QXmppTransferManager.h>
 #if QXMPP_VERSION >= 0x000905
-#include <QXmppCarbonManager.h>
+#include <QXmppCarbonManagerV2.h>
 #endif
+#include <Omemo/QXmppOmemoManager.h>
+#include <Omemo/QXmppOmemoMemoryStorage.h>
+#include <QXmppAtmManager.h>
+#include <QXmppAtmTrustMemoryStorage.h>
+#include <QXmppTrustManager.h>
+#include <QXmppTrustMemoryStorage.h>
 
 #include "textchannel.hh"
 #include "uniquehandlemap.hh"
+#include "omemostore.hh"
 
 class QXmppMucManager;
 
@@ -103,8 +110,6 @@ private slots:
     void onConnected();
     void onError(QXmppClient::Error error);
     void onMessageReceived(const QXmppMessage &message);
-    void onCarbonMessageReceived(const QXmppMessage &message);
-    void onCarbonMessageSent(const QXmppMessage &message);
     void onFileReceived(QXmppTransferJob *job);
     void onPresenceReceived(const QXmppPresence &presence);
 
@@ -112,6 +117,8 @@ private slots:
     void onDiscoveryItemsReceived(const QXmppDiscoveryIq &iq);
 
     void onRosterReceived();
+    void onPresenceChanged(const QString &bareJid, const QString &resource);
+    void onSubscriptionRequestReceived(const QString &subscriberBareJid, const QXmppPresence &presence);
 
     void onVCardReceived(QXmppVCardIq);
     void onClientVCardReceived();
@@ -135,9 +142,6 @@ private:
     QPointer<QXmppClient> m_client;
     QXmppDiscoveryManager *m_discoveryManager;
     QXmppMucManager *m_mucManager;
-#if QXMPP_VERSION >= 0x000905
-    QXmppCarbonManager *m_carbonManager;
-#endif
     QXmppPresence m_clientPresence;
     QXmppConfiguration m_clientConfig;
     UniqueHandleMap m_uniqueContactHandleMap;
@@ -148,6 +152,9 @@ private:
     QMap<QString, QString> m_clientTypes;
     QMap<QString, QXmppPresence> m_mucParticipants;
     QList<QString> m_serverEntities;
+
+    std::unique_ptr<NonsenseOmemoStorage> m_omemoStorage;
+    QXmppOmemoManager *m_omemoManager;
 };
 
 #endif // CONNECTION_HH

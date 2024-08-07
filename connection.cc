@@ -24,6 +24,8 @@
 #include <QXmppPresence.h>
 #include <QXmppTransferManager.h>
 #include <QXmppMucManager.h>
+#include <QXmppPubSubManager.h>
+#include <QXmppE2eeMetadata.h>
 
 #include "connection.hh"
 #include "muctextchannel.hh"
@@ -231,6 +233,8 @@ void Connection::doConnect(Tp::DBusError *error)
     }
 
     /* Enable extensions */
+    m_client->addExtension(new QXmppPubSubManager);
+
     m_discoveryManager = m_client->findExtension<QXmppDiscoveryManager>();
     m_discoveryManager->setClientType(clientType);
     connect(m_discoveryManager, &QXmppDiscoveryManager::infoReceived, this, &Connection::onDiscoveryInfoReceived);
@@ -243,12 +247,39 @@ void Connection::doConnect(Tp::DBusError *error)
     m_client->addExtension(transferManager);
     connect(transferManager, &QXmppTransferManager::fileReceived, this, &Connection::onFileReceived);
 
-#if QXMPP_VERSION >= 0x000905
-    m_carbonManager = new QXmppCarbonManager;
-    m_client->addExtension(m_carbonManager);
-    connect(m_carbonManager, &QXmppCarbonManager::messageReceived, this, &Connection::onCarbonMessageReceived);
-    connect(m_carbonManager, &QXmppCarbonManager::messageSent, this, &Connection::onCarbonMessageSent);
-#endif
+    m_client->addExtension(new QXmppCarbonManagerV2);
+
+    auto omemoTrustStorage = new QXmppAtmTrustMemoryStorage; // TODO
+    m_client->addNewExtension<QXmppAtmManager>(omemoTrustStorage);
+
+    m_omemoStorage = std::make_unique<NonsenseOmemoStorage>(m_clientConfig.jidBare()); // TODO: unique account ID, probably
+    m_omemoManager = m_client->addNewExtension<QXmppOmemoManager>(m_omemoStorage.get());
+    m_client->setEncryptionExtension(m_omemoManager);
+    m_omemoManager->setSecurityPolicy(QXmpp::Toakafa);
+
+    {
+        qCDebug(qxmppOMEMO) << "-!- OMEMO Manager: calling load()";
+        auto omemoFuture = m_omemoManager->load();
+        omemoFuture.then(this, [=](bool isLoaded) {
+                qCDebug(qxmppOMEMO) << "-!- OMEMO Manager loaded:" << isLoaded;
+                if (isLoaded)
+                    return;
+
+                connect(m_client, &QXmppClient::connected, this, [=]() {
+                    auto omemoFuture = m_omemoManager->setUp();
+                    omemoFuture.then(this, [=](bool isSetUp) {
+                        qCDebug(qxmppOMEMO) << "-!- OMEMO Manager set up:" << isSetUp;
+                        if (isSetUp) {
+                            m_omemoManager->setNewDeviceAutoSessionBuildingEnabled(true);
+                        }
+                    });
+                });
+            });
+    }
+
+    connect(m_omemoManager, &QXmppOmemoManager::deviceAdded, this, [=](const QString &jid, uint32_t did) mutable {
+        qCDebug(qxmppOMEMO) << "-!- OMEMO device added: " << jid << " ID: " << did;
+    });
 
     /* The features for ourself must only be added after adding all QXmpp
      * extensions - we would miss features otherwise */
@@ -260,6 +291,8 @@ void Connection::doConnect(Tp::DBusError *error)
     connect(m_client, &QXmppClient::presenceReceived, this, &Connection::onPresenceReceived);
 
     connect(&m_client->rosterManager(), &QXmppRosterManager::rosterReceived, this, &Connection::onRosterReceived);
+    connect(&m_client->rosterManager(), &QXmppRosterManager::presenceChanged, this, &Connection::onPresenceChanged);
+    connect(&m_client->rosterManager(), &QXmppRosterManager::subscriptionRequestReceived, this, &Connection::onSubscriptionRequestReceived);
 
     connect(&m_client->vCardManager(), &QXmppVCardManager::vCardReceived, this, &Connection::onVCardReceived);
     connect(&m_client->vCardManager(), &QXmppVCardManager::clientVCardReceived, this, &Connection::onClientVCardReceived);
@@ -339,6 +372,8 @@ void Connection::onConnected()
     m_discoveryManager->requestInfo(m_clientConfig.domain());
     m_serverEntities.push_back(m_clientConfig.domain());
     m_discoveryManager->requestItems(m_clientConfig.domain());
+
+    //
 }
 
 void Connection::onError(QXmppClient::Error error)
@@ -388,6 +423,27 @@ void Connection::onRosterReceived()
 
     updateGroups();
     m_contactListIface->setContactListState(Tp::ContactListStateSuccess);
+
+    // Hack
+    auto jids = m_client->rosterManager().getRosterBareJids();
+    m_omemoManager->requestDeviceLists(jids);
+    m_omemoManager->subscribeToDeviceLists(jids);
+}
+
+void Connection::onPresenceChanged(const QString &bareJid, const QString &resource)
+{
+    DBG;
+}
+
+void Connection::onSubscriptionRequestReceived(const QString &subscriberBareJid, const QXmppPresence &presence)
+{
+    DBG;
+
+    qDebug() << "-!- onSubscriptionRequestReceived known contact:" << subscriberBareJid << m_uniqueContactHandleMap.contains(subscriberBareJid);
+    if (m_uniqueContactHandleMap.contains(subscriberBareJid)) {
+        qDebug() << "Accepting subscription from contact" << subscriberBareJid;
+        m_client->rosterManager().acceptSubscription(subscriberBareJid);
+    }
 }
 
 uint Connection::setPresence(const QString &status, const QString &message, Tp::DBusError *error)
@@ -436,6 +492,8 @@ void Connection::onPresenceReceived(const QXmppPresence &presence)
         updateMucParticipantInfo(jid, presence);
         // TODO: If presence.mucItem().nick() is not empty, then the presence stanza is "Changing nickname". Look at XEP-0042, section 7.6 for details.
     }
+
+    qCDebug(general) << "onPresenceReceived! " << jid;
 
     updateJidPresence(jid, presence);
 }
@@ -497,19 +555,6 @@ void Connection::onDiscoveryInfoReceived(const QXmppDiscoveryIq &iq)
             }
         }
     }
-
-#if QXMPP_VERSION >= 0x000905
-    bool carbonFeaturesAvailable = true;
-    for (auto &carbonFeature : m_carbonManager->discoveryFeatures()) {
-        if (!iq.features().contains(carbonFeature)) {
-            carbonFeaturesAvailable = false;
-            break;
-        }
-    }
-    if (carbonFeaturesAvailable) {
-        m_carbonManager->setCarbonsEnabled(true);
-    }
-#endif
 }
 
 void Connection::onDiscoveryItemsReceived(const QXmppDiscoveryIq &iq)
@@ -796,6 +841,7 @@ void Connection::requestSubscription(const Tp::UIntList &handles, const QString 
     }
 
     for (auto handle : handles) {
+        qCDebug(general) << "!! requestSubscription " << m_uniqueContactHandleMap[handle];
         m_client->rosterManager().addItem(m_uniqueContactHandleMap[handle]); //TODO: Is adding the contact here the right thing to do?
         m_client->rosterManager().subscribe(m_uniqueContactHandleMap[handle], message);
     }
@@ -998,6 +1044,14 @@ TextChannelPtr Connection::getTextChannel(const QString &contactJid, bool ensure
 
 void Connection::onMessageReceived(const QXmppMessage &message)
 {
+    DBG;
+
+    //if (message.isCarbonMessage() {
+    //}
+    if (message.e2eeMetadata().has_value()) {
+        qCDebug(qxmppOMEMO) << "Received message with E2EE metadata!";
+    }
+
     // GroupChat messages processed in the MucTextChannel itself.
     if (message.type() == QXmppMessage::GroupChat) {
         return;
@@ -1010,32 +1064,6 @@ void Connection::onMessageReceived(const QXmppMessage &message)
     }
 
     textChannel->onMessageReceived(message);
-}
-
-void Connection::onCarbonMessageReceived(const QXmppMessage &message)
-{
-    /* There must not be any carbon copies for group chat messages */
-    if (message.type() == QXmppMessage::GroupChat) {
-        return;
-    }
-
-    TextChannelPtr textChannel = getTextChannel(message.from(), false, !message.mucInvitationJid().isEmpty());
-    if (textChannel) {
-        textChannel->onMessageReceived(message);
-    }
-}
-
-void Connection::onCarbonMessageSent(const QXmppMessage &message)
-{
-    /* There must not be any carbon copies for group chat messages */
-    if (message.type() == QXmppMessage::GroupChat) {
-        return;
-    }
-
-    TextChannelPtr textChannel = getTextChannel(message.to(), false, !message.mucInvitationJid().isEmpty());
-    if (textChannel) {
-        textChannel->onCarbonMessageSent(message);
-    }
 }
 
 void Connection::onFileReceived(QXmppTransferJob *job)

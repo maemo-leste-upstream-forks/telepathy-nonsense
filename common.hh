@@ -26,9 +26,9 @@ Q_DECLARE_LOGGING_CATEGORY(qxmppGeneric)
 Q_DECLARE_LOGGING_CATEGORY(qxmppStanza)
 Q_DECLARE_LOGGING_CATEGORY(general)
 Q_DECLARE_LOGGING_CATEGORY(tracing)
+Q_DECLARE_LOGGING_CATEGORY(qxmppOMEMO)
 
 #define DBG qCDebug(tracing) << "ENTERING " << Q_FUNC_INFO
-
 class Common {
 public:
     static Tp::SimpleStatusSpecMap getSimpleStatusSpecMap();

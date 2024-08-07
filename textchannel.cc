@@ -178,7 +178,7 @@ void TextChannel::processReceivedMessage(const QXmppMessage &message, uint sende
 
     if (message.type() == QXmppMessage::Error) {
         Tp::MessagePartList partList;
-        header[QStringLiteral("message-type")]  = QDBusVariant(Tp::ChannelTextMessageTypeDeliveryReport);
+        header[QStringLiteral("message-type")] = QDBusVariant(Tp::ChannelTextMessageTypeDeliveryReport);
 
         switch (message.error().type()) {
         // It seems that there is no "continue" error type in the spec
@@ -194,8 +194,17 @@ void TextChannel::processReceivedMessage(const QXmppMessage &message, uint sende
             break;
         }
 
-        QString errorMessage = xmppConditionToStr(message.error().condition());
+        switch (message.error().condition()) {
+        case QXmppStanza::Error::ServiceUnavailable:
+            if (message.error().type() == QXmppStanza::Error::Cancel) {
+                header[QStringLiteral("delivery-error")] = QDBusVariant(Tp::ChannelTextSendErrorOffline);
+            }
+            break;
+        default:
+            break;
+        }
 
+        QString errorMessage = xmppConditionToStr(message.error().condition());
         if (message.error().code() != 0) {
             errorMessage.append(QString(QStringLiteral(" (code %1)")).arg(message.error().code()));
         }
@@ -255,6 +264,7 @@ void TextChannel::processReceivedMessage(const QXmppMessage &message, uint sende
     }
 }
 
+#if 0
 void TextChannel::onCarbonMessageSent(const QXmppMessage &message)
 {
     Tp::MessagePart header;
@@ -280,10 +290,17 @@ void TextChannel::onCarbonMessageSent(const QXmppMessage &message)
         m_messagesIface->messageSent(partList, 0, message.id());
     }
 }
+#endif
 
 bool TextChannel::sendQXmppMessage(QXmppMessage &message)
 {
-    return m_connection->qxmppClient()->sendPacket(message);
+    qDebug() << "sendQXmppMessage" << message.from() << message.to();
+    if (message.from().startsWith(message.to())) {
+        return m_connection->qxmppClient()->sendPacket(message);
+    }
+    // TODO/OMEMO: incorrect?
+    m_connection->qxmppClient()->sendSensitive(std::move(message));
+    return true;
 }
 
 QString TextChannel::targetJid() const
@@ -306,7 +323,7 @@ void TextChannel::messageAcknowledged(const QString &messageId)
     message.setId(messageToken.toString());
     message.setMarkerId(messageId);
 
-    sendQXmppMessage(message);
+    m_connection->qxmppClient()->sendPacket(message);
 }
 
 void TextChannel::setChatState(uint state, Tp::DBusError *error)

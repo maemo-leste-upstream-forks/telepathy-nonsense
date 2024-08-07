@@ -22,6 +22,7 @@ Q_LOGGING_CATEGORY(qxmppGeneric, "qxmpp.generic")
 Q_LOGGING_CATEGORY(qxmppStanza, "qxmpp.stanza")
 Q_LOGGING_CATEGORY(general, "nonsense.general")
 Q_LOGGING_CATEGORY(tracing, "nonsense.tracing")
+Q_LOGGING_CATEGORY(qxmppOMEMO, "nonsense.omemo")
 
 Tp::SimpleStatusSpecMap Common::getSimpleStatusSpecMap()
 {
